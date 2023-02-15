@@ -125,6 +125,8 @@ def data_request_hof():
         print("adding resulting df to main object")
         outgoing_dataseries_list.append(detailed_series_data)
         outgoing_df_list.append(detailed_series_data['series_dataframed'])
+
+        i+=1
         
     #create the overarching earliest to latest timerange
     print("setting up main dataframe")
