@@ -1,4 +1,4 @@
-from flask import Flask, Markup, request, redirect, render_template, jsonify
+from flask import Flask, Markup, request, redirect, render_template, jsonify, make_response
 from flask_cors import CORS
 import requests
 from datetime import date
@@ -8,6 +8,8 @@ import json
 from fred import Fred
 import pandas as pd
 import numpy as np
+import io
+import csv
 
 #INIT THE CLIENT
 API_KEY = os.environ.get('FRED_API_KEY')
@@ -42,8 +44,25 @@ def fredsearch():
     return(SEARCH_RES_DF_NEW.to_json())
 
 
+@app.route('/test_download')
+def testing_download():
+    si = io.StringIO()
+    cw = csv.writer(si)
+    csvList = """"REVIEW_DATE","AUTHOR","ISBN","DISCOUNTED_PRICE"
+        "1985/01/21","Douglas Adams",0345391802,5.95
+        "1990/01/12","Douglas Hofstadter",0465026567,9.95
+        "1998/07/15","Timothy ""The Parser"" Campbell",0968411304,18.99
+        "1999/12/03","Richard Friedman",0060630353,5.95
+        "2004/10/04","Randel Helms",0879755725,4.50"""
+    cw.writerows(csvList)
+    output = make_response(si.getvalue())
+    output.headers["Content-Disposition"] = "attachment; filename=export.csv"
+    output.headers["Content-type"] = "text/csv"
+    return output
+
+
 #receive payload (series names + fill prefs, target frequency)
-@app.route("/retrievedata", methods=['POST'])
+@app.route("/retrievedata", methods=['GET'])
 def data_request_hof():
 
     #read in the target frequency    
@@ -62,7 +81,6 @@ def data_request_hof():
 
     #define list of objects to send to the next step
     outgoing_dataseries_list = []
-    outgoing_df_list = []
     earliest_date = None
     latest_date = None
 
@@ -103,7 +121,7 @@ def data_request_hof():
         intermediate_state_dataframe = object_2_dataframe(detailed_series_data['series_name'], detailed_series_data['series_raw_observations'])
         print("cleaning dataframe")
         detailed_series_data['series_dataframed'] = df_cleanup(intermediate_state_dataframe, ['realtime_start','realtime_end'])
-        
+        print("clean data head", detailed_series_data['series_dataframed'].head())
         #calc min and max date here (looking across all the dataframes)
         print("checking local max/min vs. global")
         local_min  = detailed_series_data['series_dataframed'].index.min()
@@ -124,13 +142,11 @@ def data_request_hof():
         #add to list of objects
         print("adding resulting df to main object")
         outgoing_dataseries_list.append(detailed_series_data)
-        outgoing_df_list.append(detailed_series_data['series_dataframed'])
-
         i+=1
         
     #create the overarching earliest to latest timerange
     print("setting up main dataframe")
-    main_frame = pd.DataFrame(np.nan, index=pd.date_range(earliest_date, latest_date), columns=['NaNs'])
+    main_frame = pd.DataFrame(np.nan, index=pd.date_range(earliest_date, latest_date, freq=target_output_frequency), columns=['NaNs'])
     main_frame.drop(axis=1, columns=['NaNs'], inplace=True)
 
     # shift every series over to the new frame (expect lots of NaNs)
@@ -139,15 +155,49 @@ def data_request_hof():
         #resample & join the frame into main
         #TODO: figure out how to fill the NaNs that are created when the date range extends before or after the dataset
         print("now backfilling series id: ",dataseries_object['series_identifier']," and merging into the main dataframe")
-        main_frame = main_frame.join(resample_hof(dataseries_object, target_output_frequency))
+        resampled_data = resample_hof(dataseries_object, target_output_frequency)
+        print(resampled_data)
+        main_frame = main_frame.join(resampled_data)
         print("successfully backfilled + merged series id: ",dataseries_object['series_identifier'])
+
+
+    #cull the dataframe to only the requested frequency- not fully needed now that we create the daterange using the target output frequency
+    main_frame = period_end_dataframe(main_frame, target_output_frequency)
 
     # return the resulting main dataframe as json to the UI
     main_frame.index = main_frame.index.strftime('%Y/%m/%d') 
 
     print("main dataframe completed. returning the result")
+    print("merged", main_frame.head())
+
+    #return CSV to the UI
+    #https://stackoverflow.com/questions/26997679/writing-a-csv-from-flask-framework
+    si = io.StringIO()
+    cw = csv.writer(si)
+    cw.writerows(main_frame.to_csv())
+    output = make_response(si.getvalue())
+    output.headers["Content-Disposition"] = "attachment; filename=export.csv"
+    output.headers["Content-type"] = "text/csv"
+    print("successfully created csv. returning to caller")
+    return output
     
-    return main_frame.to_json()
+
+def period_end_dataframe(original_dataframe, target_output_frequency):
+
+    #https://pandas.pydata.org/docs/reference/api/pandas.Series.dt.is_month_end.html
+    #Examples
+    #This method is available on Series with datetime values under the .dt accessor, and directly on DatetimeIndex.
+    
+    if target_output_frequency == 'D':
+        return original_dataframe
+    elif target_output_frequency == 'M':
+        return(original_dataframe[original_dataframe.index.is_month_end])
+    elif target_output_frequency == 'Q':
+        return(original_dataframe[original_dataframe.index.is_quarter_end])
+    elif target_output_frequency == 'Y':
+        return(original_dataframe[original_dataframe.index.is_year_end])
+    else:
+        return SyntaxError("Missing target output frequency")
     
 
 def object_2_dataframe(title, incoming_object):
@@ -182,8 +232,8 @@ def df_cleanup(dframe, columns_to_remove=None):
 
 def retrieve_raw_fred_data(series_identifier):
     # call Fred again....
+    #print(fr.category.children(97))
     return json.loads(fr.series.observations(series_identifier))
-
 
 #TODO: merge these 2 functions into 1 that accepts different characteristic names
 def retrieve_series_name(series_identifier):
@@ -213,7 +263,8 @@ def resample_hof(incoming_data_object, target_output_frequency):
 ##### Noah OG code
 # fill
 def transform_fill(series, transform_target):
-    outputSeries = series.resample(transform_target).bfill()
+    #note that bfill pulls the future value back in time. ffill pushes an old observation forward.
+    outputSeries = series.resample(transform_target).ffill()
     return outputSeries
 
 # prorate
@@ -246,7 +297,7 @@ def transform_prorate(series, transform_target, series_base_freq):
         ] + pd.offsets.Week(-1)
 
     newDF["divisor"] = (newDF["newdate"] - newDF["prevdate"]).dt.days
-    outputSeries = newDF.resample(transform_target).bfill()
+    outputSeries = newDF.resample(transform_target).ffill()
     outputSeries["oldVal"] = pd.to_numeric(outputSeries.iloc[:, 0], errors="coerce")
 
     outputSeries.iloc[:, 0] = outputSeries["oldVal"] / outputSeries["divisor"]
