@@ -62,7 +62,7 @@ def testing_download():
 
 
 #receive payload (series names + fill prefs, target frequency)
-@app.route("/retrievedata", methods=['GET'])
+@app.route("/retrievedata", methods=['GET', 'POST'])
 def data_request_hof():
 
     #read in the target frequency    
