@@ -170,16 +170,26 @@ def data_request_hof():
     print("main dataframe completed. returning the result")
     print("merged", main_frame.head())
 
-    #return CSV to the UI
-    #https://stackoverflow.com/questions/26997679/writing-a-csv-from-flask-framework
-    si = io.StringIO()
-    cw = csv.writer(si)
-    cw.writerows(main_frame.to_csv())
-    output = make_response(si.getvalue())
-    output.headers["Content-Disposition"] = "attachment; filename=export.csv"
-    output.headers["Content-type"] = "text/csv"
-    print("successfully created csv. returning to caller")
-    return output
+    # #return CSV to the UI
+    # #https://stackoverflow.com/questions/26997679/writing-a-csv-from-flask-framework
+    # si = io.StringIO()
+    # cw = csv.writer(si)
+    # cw.writerows(main_frame.to_csv())
+    # output = make_response(si.getvalue())
+    # output.headers["Content-Disposition"] = "attachment; filename=export.csv"
+    # output.headers["Content-type"] = "text/csv"
+    # print("successfully created csv. returning to caller")
+    # return output
+
+    # Convert the DataFrame to CSV format
+    csv = main_frame.to_csv(index=False)
+    # Create a Flask response with the CSV data
+    response = make_response(csv)
+    # Set the response headers to suggest a CSV file download
+    response.headers['Content-Disposition'] = 'attachment; filename=data.csv'
+    response.headers['Content-Type'] = 'text/csv'
+    return response
+
     
 
 def period_end_dataframe(original_dataframe, target_output_frequency):
