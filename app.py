@@ -182,7 +182,7 @@ def data_request_hof():
     # return output
 
     # Convert the DataFrame to CSV format
-    csv = main_frame.to_csv(index=False)
+    csv = main_frame.to_csv(index=True)
     # Create a Flask response with the CSV data
     response = make_response(csv)
     # Set the response headers to suggest a CSV file download
