@@ -237,7 +237,11 @@ def df_cleanup(dframe, columns_to_remove=None):
     dframe['date'] = pd.to_datetime(dframe['date'])
     dframe.set_index('date', inplace=True)
     #cleaner index in YYMMDD format
-    #dframe.index = dframe.index.strftime('%Y/%m/%d') 
+    #dframe.index = dframe.index.strftime('%Y/%m/%d')
+
+    # Check values and convert non-numeric to nan
+    dframe = dframe.applymap(lambda x: pd.to_numeric(x, errors='coerce'))
+
     return dframe
 
 def retrieve_raw_fred_data(series_identifier):
