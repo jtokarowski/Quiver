@@ -242,8 +242,9 @@ def df_cleanup(dframe, columns_to_remove=None):
 
 def retrieve_raw_fred_data(series_identifier):
     # call Fred again....
-    #print(fr.category.children(97))
-    return json.loads(fr.series.observations(series_identifier))
+    fred_response = json.loads(fr.series.observations(series_identifier))
+
+    return fred_response
 
 #TODO: merge these 2 functions into 1 that accepts different characteristic names
 def retrieve_series_name(series_identifier):
